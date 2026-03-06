@@ -34,8 +34,10 @@
 
 // These IDs are bogus. If you want to distribute any hardware using this,
 // you will have to get real ones.
-#define USB_VID 0xCAFE
-#define USB_PID 0xBAF2
+//#define USB_VID 0xCAFE
+//#define USB_PID 0xBAF2
+#define USB_VID 0x046D  // Logitech
+#define USB_PID 0xC24E  // G600
 
 tusb_desc_device_t desc_device = {
     .bLength = sizeof(tusb_desc_device_t),
