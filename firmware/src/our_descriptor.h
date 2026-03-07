@@ -59,7 +59,7 @@ extern const uint8_t boot_kb_report_descriptor[];
 extern const uint32_t boot_kb_report_descriptor_length;
 
 // AVISO DOS NOSSOS DESCRITORES DO G600
-extern const uint8_t g600_mouse_report_descriptor[72];
-extern const uint8_t g600_intf1_report_descriptor[231];
+extern const uint8_t g600_mouse_report_descriptor[50];
+extern const uint8_t g600_intf1_report_descriptor[63];
 
 #endif
