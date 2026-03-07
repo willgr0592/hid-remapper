@@ -1,29 +1,3 @@
-/*
- * The MIT License (MIT)
- *
- * Copyright (c) 2022 Jacek Fedorynski
- * Copyright (c) 2019 Ha Thach (tinyusb.org)
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- *
- */
-
 #include <tusb.h> //
 
 #include "config.h"
@@ -32,12 +6,9 @@
 #include "platform.h"
 #include "remapper.h"
 
-// These IDs are bogus. If you want to distribute any hardware using this,
-// you will have to get real ones.
-//#define USB_VID 0xCAFE
-//#define USB_PID 0xBAF2
-#define USB_VID 0x046D  // Logitech
-#define USB_PID 0xC24A  // G600
+// Forçando a assinatura estrita do Logitech G600
+#define USB_VID 0x046D
+#define USB_PID 0xC24A
 #define G600_CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN)
 
 tusb_desc_device_t desc_device = {
@@ -47,29 +18,27 @@ tusb_desc_device_t desc_device = {
     .bDeviceClass = 0x00,
     .bDeviceSubClass = 0x00,
     .bDeviceProtocol = 0x00,
-    .bMaxPacketSize0 = 0x20, // 32 Bytes (Identidade G600)
+    .bMaxPacketSize0 = 0x20, // 32 Bytes - Anatomia do G600
 
     .idVendor = 0x046D,
     .idProduct = 0xC24A,
-    .bcdDevice = 0x7702,     // Firmware Version G600
+    .bcdDevice = 0x7702,     // Firmware Version G600 original
 
     .iManufacturer = 0x01,
     .iProduct = 0x02,
-    .iSerialNumber = 0x03,   // Força a buscar String exata
+    .iSerialNumber = 0x03,   // Força a buscar String exata do Serial
 
     .bNumConfigurations = 0x01,
 };
 
 const uint8_t configuration_descriptor_g600[] = {
-    // Config number: 1, Interfaces: 2, String Index: 4, Total Length, Attributes, MaxPower (500mA)
+    // Config: 1, Interfaces: 2, String Index: 4, Tamanho Total, Atributos, 500mA
     TUD_CONFIG_DESCRIPTOR(1, 2, 4, G600_CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
     
-    // Interface 0: Mouse (Usa Endpoint 0x81, Max Packet Size de 9 bytes, Polling interval de 1ms)
-    // O tamanho do descritor é 72 bytes (o array g600_mouse_report_descriptor que você colocou no .h)
+    // Interface 0: Mouse (Max Packet Size: 9 bytes, Poll: 1ms)
     TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_MOUSE, 72, 0x81, 9, 1),
     
-    // Interface 1: Keyboard/Vendor (Usa Endpoint 0x82, Max Packet Size de 32 bytes, Polling interval de 1ms)
-    // O tamanho do descritor combinado é 231 bytes (o array g600_intf1_report_descriptor)
+    // Interface 1: Keyboard/Vendor (Max Packet Size: 32 bytes, Poll: 1ms)
     TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_KEYBOARD, 231, 0x82, 32, 1),
 };
 
@@ -78,11 +47,12 @@ char const* string_desc_arr[] = {
     "Logitech",                 // 1: Manufacturer
     "Gaming Mouse G600",        // 2: Product
     "9E032E3CB4740017",         // 3: Serial Real do G600
-    "U77.02_B0017"              // 4: Configuração
+    "U77.02_B0017"              // 4: Configuração do G600
 };
 
 // Invoked when received GET DEVICE DESCRIPTOR
 uint8_t const* tud_descriptor_device_cb() {
+    // COMENTADO PROPÓSITALMENTE: Isso impede que o hid-remapper sobrescreva a identidade
     // if ((our_descriptor->vid != 0) && (our_descriptor->pid != 0)) {
     //     desc_device.idVendor = our_descriptor->vid;
     //     desc_device.idProduct = our_descriptor->pid;
@@ -92,28 +62,22 @@ uint8_t const* tud_descriptor_device_cb() {
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 uint8_t const* tud_descriptor_configuration_cb(uint8_t index) {
-    return configuration_descriptor_g600; // Forçamos a entregar a topologia perfeita do G600
+    return configuration_descriptor_g600; // Obriga a usar as 2 interfaces isoladas
 }
 
 // Invoked when received GET HID REPORT DESCRIPTOR
 uint8_t const* tud_hid_descriptor_report_cb(uint8_t itf) {
     if (itf == 0) {
-        // O Windows pediu os dados da Interface 0? Entregue o HEX de 72 bytes do Mouse G600
-        return g600_mouse_report_descriptor; 
+        return g600_mouse_report_descriptor; // 72 bytes do Mouse
     } else if (itf == 1) {
-        // O Windows pediu os dados da Interface 1? Entregue o HEX combinado de 231 bytes do Teclado/Vendor
-        return g600_intf1_report_descriptor; 
+        return g600_intf1_report_descriptor; // 231 bytes do Teclado/Vendor
     }
-
     return NULL;
 }
 
 static uint16_t _desc_str[32];
 
-const char id_chars[33] = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
-
 // Invoked when received GET STRING DESCRIPTOR request
-// Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
 uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     uint8_t chr_count;
 
@@ -121,35 +85,22 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
         memcpy(&_desc_str[1], string_desc_arr[0], 2);
         chr_count = 1;
     } else {
-        // Note: the 0xEE index string is a Microsoft OS 1.0 Descriptors.
-        // https://docs.microsoft.com/en-us/windows-hardware/drivers/usbcon/microsoft-defined-usb-descriptors
-
         if (!(index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0])))
             return NULL;
 
         const char* str = string_desc_arr[index];
-
-        // Cap at max char
         chr_count = strlen(str);
         if (chr_count > 31)
             chr_count = 31;
 
-        // Convert ASCII string into UTF-16
         for (uint8_t i = 0; i < chr_count; i++) {
             _desc_str[1 + i] = str[i];
         }
-
-        //if (index == 2) {
-        //    uint64_t unique_id = get_unique_id();
-        //    for (uint8_t i = 0; i < 4; i++) {
-        //        _desc_str[1 + chr_count - 4 + i] = id_chars[(unique_id >> (15 - i * 5)) & 0x1F];
-        //    }
-        //}
+        
+        // CÓDIGO DE SERIAL DINÂMICO APAGADO PROPÓSITALMENTE AQUI
     }
 
-    // first byte is length (including header), second byte is string type
     _desc_str[0] = (TUSB_DESC_STRING << 8) | (2 * chr_count + 2);
-
     return _desc_str;
 }
 
@@ -174,7 +125,6 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 }
 
 void tud_hid_set_protocol_cb(uint8_t instance, uint8_t protocol) {
-    printf("tud_hid_set_protocol_cb %d %d\n", instance, protocol);
     boot_protocol_keyboard = (protocol == HID_PROTOCOL_BOOT);
     boot_protocol_updated = true;
 }
@@ -188,9 +138,7 @@ void tud_mount_cb() {
 }
 
 void tud_suspend_cb(bool remote_wakeup_en) {
-    printf("tud_suspend_cb\n");
 }
 
 void tud_resume_cb() {
-    printf("tud_resume_cb\n");
 }
