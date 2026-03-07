@@ -768,8 +768,8 @@ uint8_t const boot_kb_report_descriptor[] = {
 
 const uint32_t boot_kb_report_descriptor_length = sizeof(boot_kb_report_descriptor);
 
-// Interface 0: Mouse Genérico Universal (Para remover o Erro 10)
-const uint8_t g600_mouse_report_descriptor[50] = {
+// Interface 0: Mouse (46 bytes)
+const uint8_t g600_mouse_report_descriptor[46] = {
     0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
     0x09, 0x02,        // Usage (Mouse)
     0xA1, 0x01,        // Collection (Application)
@@ -777,7 +777,7 @@ const uint8_t g600_mouse_report_descriptor[50] = {
     0xA1, 0x00,        //   Collection (Physical)
     0x05, 0x09,        //     Usage Page (Button)
     0x19, 0x01,        //     Usage Minimum (0x01)
-    0x29, 0x10,        //     Usage Maximum (0x10) - 16 botões do G600
+    0x29, 0x10,        //     Usage Maximum (0x10)
     0x15, 0x00,        //     Logical Minimum (0)
     0x25, 0x01,        //     Logical Maximum (1)
     0x95, 0x10,        //     Report Count (16)
@@ -792,11 +792,11 @@ const uint8_t g600_mouse_report_descriptor[50] = {
     0x75, 0x08,        //     Report Size (8)
     0x95, 0x03,        //     Report Count (3)
     0x81, 0x06,        //     Input (Data,Var,Rel,No Wrap,Linear,Preferred State,No Null Position)
-    0xC1,              //   End Collection
-    0xC1               // End Collection
+    0xC0,              //   End Collection
+    0xC0               // End Collection
 };
 
-// Interface 1: Teclado Genérico Padrão Boot (Para remover o Erro 10)
+// Interface 1: Teclado Genérico (63 bytes)
 const uint8_t g600_intf1_report_descriptor[63] = {
     0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
     0x09, 0x06,        // Usage (Keyboard)
@@ -829,5 +829,5 @@ const uint8_t g600_intf1_report_descriptor[63] = {
     0x19, 0x00,        //   Usage Minimum (0x00)
     0x29, 0x65,        //   Usage Maximum (0x65)
     0x81, 0x00,        //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0xC1               // End Collection
+    0xC0               // End Collection
 };
