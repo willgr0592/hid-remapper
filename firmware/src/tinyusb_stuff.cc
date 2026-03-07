@@ -18,7 +18,9 @@ tusb_desc_device_t desc_device = {
     .bDeviceClass = 0x00,
     .bDeviceSubClass = 0x00,
     .bDeviceProtocol = 0x00,
-    .bMaxPacketSize0 = 0x20, // 32 Bytes - Anatomia do G600
+    
+    // CORREÇÃO CRÍTICA: O Endpoint 0 do RP2350 precisa ser 64 (Evita o Erro 43)
+    .bMaxPacketSize0 = 64, 
 
     .idVendor = 0x046D,
     .idProduct = 0xC24A,
@@ -39,7 +41,8 @@ const uint8_t configuration_descriptor_g600[] = {
     TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_MOUSE, 72, 0x81, 9, 1),
     
     // Interface 1: Keyboard/Vendor (Max Packet Size: 32 bytes, Poll: 1ms)
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_KEYBOARD, 231, 0x82, 32, 1),
+    // CORREÇÃO CRÍTICA: Usar Endpoint 0x83 nativo do hid-remapper
+    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_KEYBOARD, 231, 0x83, 32, 1),
 };
 
 char const* string_desc_arr[] = {
@@ -52,17 +55,12 @@ char const* string_desc_arr[] = {
 
 // Invoked when received GET DEVICE DESCRIPTOR
 uint8_t const* tud_descriptor_device_cb() {
-    // COMENTADO PROPÓSITALMENTE: Isso impede que o hid-remapper sobrescreva a identidade
-    // if ((our_descriptor->vid != 0) && (our_descriptor->pid != 0)) {
-    //     desc_device.idVendor = our_descriptor->vid;
-    //     desc_device.idProduct = our_descriptor->pid;
-    // }
     return (uint8_t const*) &desc_device;
 }
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 uint8_t const* tud_descriptor_configuration_cb(uint8_t index) {
-    return configuration_descriptor_g600; // Obriga a usar as 2 interfaces isoladas
+    return configuration_descriptor_g600; 
 }
 
 // Invoked when received GET HID REPORT DESCRIPTOR
@@ -96,8 +94,6 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
         for (uint8_t i = 0; i < chr_count; i++) {
             _desc_str[1 + i] = str[i];
         }
-        
-        // CÓDIGO DE SERIAL DINÂMICO APAGADO PROPÓSITALMENTE AQUI
     }
 
     _desc_str[0] = (TUSB_DESC_STRING << 8) | (2 * chr_count + 2);
