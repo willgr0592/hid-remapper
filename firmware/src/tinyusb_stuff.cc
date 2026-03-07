@@ -95,6 +95,14 @@ const uint8_t configuration_descriptor5[] = {
     TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
 };
 
+const uint8_t configuration_descriptor6[] = {
+    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+    // Interface 0: G600 Mouse (usando o seu descriptor de 72 bytes)
+    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_MOUSE, our_descriptors[6].descriptor_length, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
+    // Interface 1: Interface de configuração nativa do hid-remapper (Necessário para a interface Web funcionar)
+    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
+};
+
 const uint8_t* configuration_descriptors[] = {
     configuration_descriptor0,
     configuration_descriptor1,
@@ -102,6 +110,7 @@ const uint8_t* configuration_descriptors[] = {
     configuration_descriptor3,
     configuration_descriptor4,
     configuration_descriptor5,
+    configuration_descriptor6, //
 };
 
 char const* string_desc_arr[] = {
