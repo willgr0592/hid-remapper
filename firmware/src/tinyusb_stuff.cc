@@ -38,6 +38,7 @@
 //#define USB_PID 0xBAF2
 #define USB_VID 0x046D  // Logitech
 #define USB_PID 0xC24A  // G600
+#define G600_CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN)
 
 tusb_desc_device_t desc_device = {
     .bLength = sizeof(tusb_desc_device_t),
@@ -46,104 +47,62 @@ tusb_desc_device_t desc_device = {
     .bDeviceClass = 0x00,
     .bDeviceSubClass = 0x00,
     .bDeviceProtocol = 0x00,
-    .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
+    .bMaxPacketSize0 = 0x20, // 32 Bytes (Identidade G600)
 
-    .idVendor = USB_VID,
-    .idProduct = USB_PID,
-    .bcdDevice = 0x0100,
+    .idVendor = 0x046D,
+    .idProduct = 0xC24A,
+    .bcdDevice = 0x7702,     // Firmware Version G600
 
     .iManufacturer = 0x01,
     .iProduct = 0x02,
-    .iSerialNumber = 0x00,
+    .iSerialNumber = 0x03,   // Força a buscar String exata
 
     .bNumConfigurations = 0x01,
 };
 
-const uint8_t configuration_descriptor0[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
-    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_KEYBOARD, our_descriptors[0].descriptor_length, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
-};
-
-const uint8_t configuration_descriptor1[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
-    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_KEYBOARD, our_descriptors[1].descriptor_length, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
-};
-
-const uint8_t configuration_descriptor2[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + TUD_HID_DESC_LEN, 0, 100),
-    TUD_HID_INOUT_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE, our_descriptors[2].descriptor_length, 0x02, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
-};
-
-const uint8_t configuration_descriptor3[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN, 0, 100),
-    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE, our_descriptors[3].descriptor_length, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
-};
-
-const uint8_t configuration_descriptor4[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + TUD_HID_DESC_LEN, 0, 100),
-    TUD_HID_INOUT_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE, our_descriptors[4].descriptor_length, 0x02, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
-};
-
-const uint8_t configuration_descriptor5[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN, 0, 100),
-    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE, our_descriptors[5].descriptor_length, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
-};
-
-const uint8_t configuration_descriptor6[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
-    // Interface 0: G600 Mouse (usando o seu descriptor de 72 bytes)
-    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_MOUSE, our_descriptors[6].descriptor_length, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
-    // Interface 1: Interface de configuração nativa do hid-remapper (Necessário para a interface Web funcionar)
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
-};
-
-const uint8_t* configuration_descriptors[] = {
-    configuration_descriptor0,
-    configuration_descriptor1,
-    configuration_descriptor2,
-    configuration_descriptor3,
-    configuration_descriptor4,
-    configuration_descriptor5,
-    configuration_descriptor6, //
+const uint8_t configuration_descriptor_g600[] = {
+    // Config number: 1, Interfaces: 2, String Index: 4, Total Length, Attributes, MaxPower (500mA)
+    TUD_CONFIG_DESCRIPTOR(1, 2, 4, G600_CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
+    
+    // Interface 0: Mouse (Usa Endpoint 0x81, Max Packet Size de 9 bytes, Polling interval de 1ms)
+    // O tamanho do descritor é 72 bytes (o array g600_mouse_report_descriptor que você colocou no .h)
+    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_MOUSE, 72, 0x81, 9, 1),
+    
+    // Interface 1: Keyboard/Vendor (Usa Endpoint 0x82, Max Packet Size de 32 bytes, Polling interval de 1ms)
+    // O tamanho do descritor combinado é 231 bytes (o array g600_intf1_report_descriptor)
+    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_KEYBOARD, 231, 0x82, 32, 1),
 };
 
 char const* string_desc_arr[] = {
-    (const char[]){ 0x09, 0x04 },
-    "Logitech",
-    "Gaming Mouse G600",
+    (const char[]){0x09, 0x04}, // 0: English
+    "Logitech",                 // 1: Manufacturer
+    "Gaming Mouse G600",        // 2: Product
+    "9E032E3CB4740017",         // 3: Serial Real do G600
+    "U77.02_B0017"              // 4: Configuração
 };
 
 // Invoked when received GET DEVICE DESCRIPTOR
-// Application return pointer to descriptor
 uint8_t const* tud_descriptor_device_cb() {
-    if ((our_descriptor->vid != 0) && (our_descriptor->pid != 0)) {
-        desc_device.idVendor = our_descriptor->vid;
-        desc_device.idProduct = our_descriptor->pid;
-    }
+    // if ((our_descriptor->vid != 0) && (our_descriptor->pid != 0)) {
+    //     desc_device.idVendor = our_descriptor->vid;
+    //     desc_device.idProduct = our_descriptor->pid;
+    // }
     return (uint8_t const*) &desc_device;
 }
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
-// Application return pointer to descriptor
-// Descriptor contents must exist long enough for transfer to complete
 uint8_t const* tud_descriptor_configuration_cb(uint8_t index) {
-    return configuration_descriptors[our_descriptor->idx];
+    return configuration_descriptor_g600; // Forçamos a entregar a topologia perfeita do G600
 }
 
 // Invoked when received GET HID REPORT DESCRIPTOR
-// Application return pointer to descriptor
-// Descriptor contents must exist long enough for transfer to complete
 uint8_t const* tud_hid_descriptor_report_cb(uint8_t itf) {
     if (itf == 0) {
-        return our_descriptor->descriptor;
+        // O Windows pediu os dados da Interface 0? Entregue o HEX de 72 bytes do Mouse G600
+        return g600_mouse_report_descriptor; 
     } else if (itf == 1) {
-        return config_report_descriptor;
+        // O Windows pediu os dados da Interface 1? Entregue o HEX combinado de 231 bytes do Teclado/Vendor
+        return g600_intf1_report_descriptor; 
     }
 
     return NULL;
@@ -180,12 +139,12 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             _desc_str[1 + i] = str[i];
         }
 
-        if (index == 2) {
-            uint64_t unique_id = get_unique_id();
-            for (uint8_t i = 0; i < 4; i++) {
-                _desc_str[1 + chr_count - 4 + i] = id_chars[(unique_id >> (15 - i * 5)) & 0x1F];
-            }
-        }
+        //if (index == 2) {
+        //    uint64_t unique_id = get_unique_id();
+        //    for (uint8_t i = 0; i < 4; i++) {
+        //        _desc_str[1 + chr_count - 4 + i] = id_chars[(unique_id >> (15 - i * 5)) & 0x1F];
+        //    }
+        //}
     }
 
     // first byte is length (including header), second byte is string type
