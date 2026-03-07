@@ -37,12 +37,12 @@ const uint8_t configuration_descriptor_g600[] = {
     // Config: 1, Interfaces: 2, String Index: 4, Tamanho Total, Atributos, 500mA
     TUD_CONFIG_DESCRIPTOR(1, 2, 4, G600_CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
     
-    // Interface 0: Mouse (Max Packet Size: 9 bytes, Poll: 1ms)
-    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_MOUSE, 72, 0x81, 9, 1),
+    // Interface 0: Mouse (Agora com 50 bytes)
+    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_MOUSE, 50, 0x81, 9, 1),
     
-    // Interface 1: Keyboard/Vendor (Max Packet Size: 32 bytes, Poll: 1ms)
-    // CORREÇÃO CRÍTICA: Usar Endpoint 0x83 nativo do hid-remapper
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_KEYBOARD, 231, 0x83, 32, 1),
+    // Interface 1: Keyboard/Vendor (Agora com 63 bytes)
+    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_KEYBOARD, 63, 0x83, 32, 1),
+
 };
 
 char const* string_desc_arr[] = {
