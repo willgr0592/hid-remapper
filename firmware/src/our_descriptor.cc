@@ -698,6 +698,15 @@ const our_descriptor_def_t our_descriptors[] = {
         .clear_report = xac_compat_clear_report,
         .default_value = ps4_stadia_default_value,  // sic
     },
+    // G600 Mouse Interface
+    {
+        .idx = 6,
+        .descriptor = g600_mouse_report_descriptor,
+        .descriptor_length = 72,
+        .vid = 0x046D,
+        .pid = 0xC24A,
+        .handle_received_report = do_handle_received_report,
+    },
 };
 
 const uint8_t config_report_descriptor[] = {
