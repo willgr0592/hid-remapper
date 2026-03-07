@@ -633,9 +633,9 @@ const our_descriptor_def_t our_descriptors[] = {
     {
         .idx = 0,
         .descriptor = our_report_descriptor_kb_mouse,
+        .descriptor_length = sizeof(our_report_descriptor_kb_mouse),
         .vid = 0x046D,  // ← LOGITECH VID
         .pid = 0xC24E,  // ← G600
-        .descriptor_length = sizeof(our_report_descriptor_kb_mouse),
         .handle_received_report = do_handle_received_report,
         .handle_get_report = kb_mouse_handle_get_report,
         .handle_set_report = kb_mouse_handle_set_report,
