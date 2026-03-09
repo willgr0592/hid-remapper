@@ -9,7 +9,7 @@
 
 // Forçamos o VID e PID do Logitech G600
 #define USB_VID 0x046D
-#define USB_PID 0xC24A
+#define USB_PID 0xC24A //go
 
 tusb_desc_device_t desc_device = {
     .bLength = sizeof(tusb_desc_device_t),
