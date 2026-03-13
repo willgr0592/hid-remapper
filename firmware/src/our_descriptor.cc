@@ -631,8 +631,8 @@ const our_descriptor_def_t our_descriptors[] = {
         .handle_get_report = kb_mouse_handle_get_report,
         .handle_set_report = kb_mouse_handle_set_report,
         .set_report_synchronous = kb_mouse_set_report_synchronous,
-        .should_cause_wakeup = kb_mouse_should_cause_wakeup,
         .clear_report = xac_compat_clear_report,
+        .should_cause_wakeup = kb_mouse_should_cause_wakeup,
     },
     {
         .idx = 1,
