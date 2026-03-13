@@ -18,7 +18,7 @@ tusb_desc_device_t desc_device = {
     .bDeviceClass = 0x00,
     .bDeviceSubClass = 0x00,
     .bDeviceProtocol = 0x00,
-    .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
+    .bMaxPacketSize0 = 32, // G600 REAL VALUE
 
     .idVendor = USB_VID,
     .idProduct = USB_PID,
@@ -63,14 +63,9 @@ const uint8_t configuration_descriptor4[] = {
 };
 
 const uint8_t configuration_descriptor5[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN, 0, 250),
+    // G600
+    TUD_CONFIG_DESCRIPTOR(1, 2, 4, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
     TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE, our_descriptors[5].descriptor_length, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
-    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
-};
-
-const uint8_t configuration_descriptor6[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 2, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_DESC_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 250),
-    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE, our_descriptors[6].descriptor_length, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
     TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, config_report_descriptor_length, 0x83, CFG_TUD_HID_EP_BUFSIZE, 1),
 };
 
@@ -81,7 +76,6 @@ const uint8_t* configuration_descriptors[] = {
     configuration_descriptor3,
     configuration_descriptor4,
     configuration_descriptor5,
-    configuration_descriptor6,
 };
 
 // Aqui aplicamos a identidade do G600
@@ -90,6 +84,7 @@ char const* string_desc_arr[] = {
     "Logitech",                 // 1: Manufacturer
     "Gaming Mouse G600",        // 2: Product
     "9E032E3CB4740017",         // 3: Serial Original
+    "U77.02_B0017",             // 4: Configuration String
 };
 
 uint8_t const* tud_descriptor_device_cb() {
