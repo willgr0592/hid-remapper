@@ -22,7 +22,7 @@ tusb_desc_device_t desc_device = {
 
     .idVendor = USB_VID,
     .idProduct = USB_PID,
-    .bcdDevice = 0x7702, // Retornamos para a versão original do G600 (0x7702)
+    .bcdDevice = 0x7706, // Mudamos para 06 para forçar o Windows a limpar o cache novamente!
 
     .iManufacturer = 0x01,
     .iProduct = 0x02,
@@ -42,10 +42,14 @@ const uint8_t desc_g600_mouse[] = {
     0x0C, 0x0A, 0x38, 0x02, 0x81, 0x06, 0xC0, 0xC0
 };
 
-const uint8_t desc_g600_kbd_vendor[] = {
+// Teclado + Vendor G600 + Web Configuração do HID-Remapper
+const uint8_t desc_g600_itf1[] = {
+    // -- KEYBOARD --
     0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x85, 0x02, 0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00,
     0x25, 0x01, 0x35, 0x00, 0x45, 0x01, 0x65, 0x00, 0x55, 0x00, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02,
     0x95, 0x28, 0x81, 0x03, 0xC0,
+    
+    // -- VENDOR LOGITECH --
     0x06, 0x80, 0xFF, 0x09, 0x80, 0xA1, 0x01, 0x85, 0x80, 0x09, 0x80, 0x15, 0x00, 0x25, 0xA4, 0x35,
     0x00, 0x45, 0x00, 0x65, 0x00, 0x55, 0x00, 0x75, 0x08, 0x95, 0x05, 0x81, 0x02, 0x25, 0x01, 0x45,
     0x01, 0x75, 0x01, 0x95, 0xD0, 0x81, 0x03, 0x85, 0xF6, 0x09, 0xF6, 0x25, 0xA4, 0x45, 0x00, 0x75,
@@ -57,22 +61,26 @@ const uint8_t desc_g600_kbd_vendor[] = {
     0x00, 0x75, 0x08, 0x95, 0x04, 0xB1, 0x02, 0x25, 0x01, 0x45, 0x01, 0x75, 0x01, 0x96, 0xA8, 0x04,
     0xB1, 0x03, 0x85, 0xF3, 0x09, 0xF3, 0x25, 0xA4, 0x45, 0x00, 0x75, 0x08, 0x95, 0x99, 0xB1, 0x02,
     0x85, 0xF4, 0x09, 0xF4, 0xB1, 0x02, 0x85, 0xF5, 0x09, 0xF5, 0xB1, 0x02, 0x85, 0xF6, 0x09, 0xF6,
-    0x95, 0x07, 0xB1, 0x02, 0x25, 0x01, 0x45, 0x01, 0x75, 0x01, 0x96, 0x90, 0x04, 0xB1, 0x03, 0xC0
+    0x95, 0x07, 0xB1, 0x02, 0x25, 0x01, 0x45, 0x01, 0x75, 0x01, 0x96, 0x90, 0x04, 0xB1, 0x03, 0xC0,
+
+    // -- REMAPPER WEB CONFIG (Invisível para jogos, Report IDs 100 e 101) --
+    0x06, 0x00, 0xFF, 0x09, 0x20, 0xA1, 0x01, 0x09, 0x20, 0x85, 100, 0x75, 0x08, 0x95, 32, 0xB1, 
+    0x02, 0xC0, 0x09, 0x21, 0xA1, 0x01, 0x09, 0x21, 0x85, 101, 0x75, 0x08, 0x95, 63, 0x81, 0x02, 0xC0
 };
 
 const uint8_t configuration_descriptor_g600[] = {
-    // Config number, interface count, string index, total length, attribute, power in mA (macro divide por 2 -> 500 = 0xFA)
-    TUD_CONFIG_DESCRIPTOR(1, 2, 4, TUD_CONFIG_DESC_LEN + (25 * 2), TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
+    // Config number, interface count, string index, total length, attribute, power in mA
+    TUD_CONFIG_DESCRIPTOR(1, 2, 4, TUD_CONFIG_DESC_LEN + (25 * 2), TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500), 
     
-    // Interface 0: Mouse (Subclass 1, Protocol 2, EP 9 bytes)
+    // Interface 0: Mouse
     9, TUSB_DESC_INTERFACE, 0, 0, 1, TUSB_CLASS_HID, 0x01, 0x02, 0x00,
     9, HID_DESC_TYPE_HID, 0x11, 0x01, 0x00, 1, HID_DESC_TYPE_REPORT, (uint8_t)(sizeof(desc_g600_mouse) & 0xFF), (uint8_t)(sizeof(desc_g600_mouse) >> 8),
-    7, TUSB_DESC_ENDPOINT, 0x81, TUSB_XFER_INTERRUPT, 0x09, 0x00, 1, // <-- Otimização de silício: 9 bytes
+    7, TUSB_DESC_ENDPOINT, 0x81, TUSB_XFER_INTERRUPT, 0x09, 0x00, 1, // Otimização de silício: 9 bytes
 
-    // Interface 1: Teclado + Vendor + Web Config (Subclass 0, Protocol 1, EP 32 bytes)
+    // Interface 1: Teclado + Vendor + Web Config
     9, TUSB_DESC_INTERFACE, 1, 0, 1, TUSB_CLASS_HID, 0x00, 0x01, 0x00,
     9, HID_DESC_TYPE_HID, 0x11, 0x01, 0x00, 1, HID_DESC_TYPE_REPORT, (uint8_t)(sizeof(desc_g600_itf1) & 0xFF), (uint8_t)(sizeof(desc_g600_itf1) >> 8),
-    7, TUSB_DESC_ENDPOINT, 0x82, TUSB_XFER_INTERRUPT, 0x20, 0x00, 1  // <-- Otimização de silício: 32 bytes (0x20)
+    7, TUSB_DESC_ENDPOINT, 0x82, TUSB_XFER_INTERRUPT, 0x20, 0x00, 1  // Otimização de silício: 32 bytes
 };
 
 // Aqui aplicamos a identidade do G600
@@ -100,9 +108,7 @@ uint8_t const* tud_hid_descriptor_report_cb(uint8_t itf) {
     if (itf == 0) {
         return desc_g600_mouse;
     } else if (itf == 1) {
-        return desc_g600_kbd_vendor;
-    } else if (itf == 2) {
-        return config_report_descriptor;
+        return desc_g600_itf1;
     }
     return NULL;
 }
@@ -133,23 +139,23 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
 }
 
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen) {
-    if (itf == 0 || itf == 1) {
-        return handle_get_report0(report_id, buffer, reqlen);
-    } else if (itf == 2) {
+    // Roteamento inteligente baseado no ID
+    if (report_id == REPORT_ID_CONFIG || report_id == REPORT_ID_MONITOR) {
         return handle_get_report1(report_id, buffer, reqlen);
+    } else {
+        return handle_get_report0(report_id, buffer, reqlen);
     }
-    return 0;
 }
 
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
-    if (itf == 0 || itf == 1) {
+    if (report_id == REPORT_ID_CONFIG || report_id == REPORT_ID_MONITOR) {
+        handle_set_report1(report_id, buffer, bufsize);
+    } else {
         if ((report_id == 0) && (report_type == 0) && (bufsize > 0)) {
             report_id = buffer[0];
             buffer++;
         }
         handle_set_report0(report_id, buffer, bufsize);
-    } else if (itf == 2) {
-        handle_set_report1(report_id, buffer, bufsize);
     }
 }
 
