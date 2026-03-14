@@ -18,11 +18,11 @@ tusb_desc_device_t desc_device = {
     .bDeviceClass = 0x00,
     .bDeviceSubClass = 0x00,
     .bDeviceProtocol = 0x00,
-    .bMaxPacketSize0 = 32, // Clonagem 100% exata da assinatura do G600
+    .bMaxPacketSize0 = 64, // EP0 fixo em 64 bytes pelo hardware do RP2350 (evita o Erro 43 Babble)
 
     .idVendor = USB_VID,
     .idProduct = USB_PID,
-    .bcdDevice = 0x7706, // Mudamos para 06 para forçar o Windows a limpar o cache novamente!
+    .bcdDevice = 0x7707, // Mudamos para 07 para forçar o Windows a limpar o cache do Erro 43
 
     .iManufacturer = 0x01,
     .iProduct = 0x02,
@@ -70,17 +70,13 @@ const uint8_t desc_g600_itf1[] = {
 
 const uint8_t configuration_descriptor_g600[] = {
     // Config number, interface count, string index, total length, attribute, power in mA
-    TUD_CONFIG_DESCRIPTOR(1, 2, 4, TUD_CONFIG_DESC_LEN + (25 * 2), TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500), 
+    TUD_CONFIG_DESCRIPTOR(1, 2, 4, TUD_CONFIG_DESC_LEN + (TUD_HID_DESC_LEN * 2), TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500), 
     
-    // Interface 0: Mouse
-    9, TUSB_DESC_INTERFACE, 0, 0, 1, TUSB_CLASS_HID, 0x01, 0x02, 0x00,
-    9, HID_DESC_TYPE_HID, 0x11, 0x01, 0x00, 1, HID_DESC_TYPE_REPORT, (uint8_t)(sizeof(desc_g600_mouse) & 0xFF), (uint8_t)(sizeof(desc_g600_mouse) >> 8),
-    7, TUSB_DESC_ENDPOINT, 0x81, TUSB_XFER_INTERRUPT, 0x09, 0x00, 1, // Otimização de silício: 9 bytes
+    // Interface 0: Mouse (Otimizado via Macro: 9 bytes p/ Endpoint In)
+    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_MOUSE, sizeof(desc_g600_mouse), 0x81, 9, 1),
 
-    // Interface 1: Teclado + Vendor + Web Config
-    9, TUSB_DESC_INTERFACE, 1, 0, 1, TUSB_CLASS_HID, 0x00, 0x01, 0x00,
-    9, HID_DESC_TYPE_HID, 0x11, 0x01, 0x00, 1, HID_DESC_TYPE_REPORT, (uint8_t)(sizeof(desc_g600_itf1) & 0xFF), (uint8_t)(sizeof(desc_g600_itf1) >> 8),
-    7, TUSB_DESC_ENDPOINT, 0x82, TUSB_XFER_INTERRUPT, 0x20, 0x00, 1  // Otimização de silício: 32 bytes
+    // Interface 1: Teclado + Vendor + Web Config (Subclass 0 "None", Otimizado via Macro: 32 bytes)
+    TUD_HID_DESCRIPTOR(1, 0, HID_ITF_PROTOCOL_NONE, sizeof(desc_g600_itf1), 0x82, 32, 1)
 };
 
 // Aqui aplicamos a identidade do G600
