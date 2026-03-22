@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include <tusb.h>
 #include "hardware/uart.h"
 
 #include "descriptor_parser.h"
@@ -108,6 +109,7 @@ static uint8_t cmd_data_length(uint8_t c) {
         case UART_CMD_SCROLL:  return 2;
         case UART_CMD_REPORT:  return 8;
         case UART_CMD_CLICK:   return 2;
+        case UART_CMD_KEY:     return 2;
         default:               return 0;
     }
 }
@@ -176,6 +178,18 @@ static bool execute_cmd() {
                 return true;
             }
             return false;
+        }
+        case UART_CMD_KEY: {
+            // Send keyboard report directly on interface 1, bypassing remapper.
+            // Report ID 2, format: modifier(1) + reserved(1) + keys(6) = 8 bytes
+            uint8_t modifier = data_buf[0];
+            uint8_t keycode = data_buf[1];
+            uint8_t kb_report[8] = {0};
+            kb_report[0] = modifier;
+            // kb_report[1] = 0 (reserved)
+            kb_report[2] = keycode;  // key slot 0
+            tud_hid_n_report(1, 2, kb_report, sizeof(kb_report));
+            return true;
         }
         default:
             return false;
