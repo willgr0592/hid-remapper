@@ -10,6 +10,7 @@
 #include "out_report.h"
 #include "remapper.h"
 #include "tick.h"
+#include "uart_cmd.h"
 
 static bool __no_inline_not_in_flash_func(manual_sof)(repeating_timer_t* rt) {
     pio_usb_host_frame();
@@ -25,6 +26,9 @@ void extra_init() {
     pio_cfg.skip_alarm_pool = true;
     tuh_configure(BOARD_TUH_RHPORT, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
     add_repeating_timer_us(-1000, manual_sof, NULL, &sof_timer);
+
+    // Register fake device for UART serial command injection (CP2102 on GPIO 0/1)
+    uart_cmd_init();
 }
 
 uint32_t get_gpio_valid_pins_mask() {
@@ -46,6 +50,12 @@ void read_report(bool* new_report, bool* tick) {
 
     reports_received = false;
     tuh_task();
+
+    // Process incoming UART commands from CP2102
+    if (uart_cmd_process()) {
+        reports_received = true;
+    }
+
     *new_report = reports_received;
 }
 
