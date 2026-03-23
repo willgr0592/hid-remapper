@@ -32,6 +32,7 @@
 #define UART_CMD_REPORT   0x04
 #define UART_CMD_CLICK    0x05
 #define UART_CMD_KEY      0x06
+#define UART_CMD_KEY_TAP  0x07  // single-shot: sends ONE key-down report then auto-clears state
 
 // Register fake device descriptor for UART input injection.
 // Call this from extra_init().
