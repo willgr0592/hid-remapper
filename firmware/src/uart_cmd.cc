@@ -88,6 +88,18 @@ struct __attribute__((packed)) uart_mouse_report_t {
 // Persistent button state (buttons are absolute, so we track state across commands)
 static uint16_t button_state = 0;
 
+// Persistent keyboard state — kept across commands so keys stay held
+static uint8_t kb_modifier_state = 0;
+static uint8_t kb_keycode_state = 0;
+
+static void send_kb_report() {
+    uint8_t kb_report[8] = {0};
+    kb_report[0] = kb_modifier_state;
+    // kb_report[1] = 0 (reserved)
+    kb_report[2] = kb_keycode_state;
+    tud_hid_n_report(1, 2, kb_report, sizeof(kb_report));
+}
+
 // Protocol parser state machine
 enum ParseState : uint8_t {
     WAIT_SYNC,
@@ -180,15 +192,11 @@ static bool execute_cmd() {
             return false;
         }
         case UART_CMD_KEY: {
-            // Send keyboard report directly on interface 1, bypassing remapper.
-            // Report ID 2, format: modifier(1) + reserved(1) + keys(6) = 8 bytes
-            uint8_t modifier = data_buf[0];
-            uint8_t keycode = data_buf[1];
-            uint8_t kb_report[8] = {0};
-            kb_report[0] = modifier;
-            // kb_report[1] = 0 (reserved)
-            kb_report[2] = keycode;  // key slot 0
-            tud_hid_n_report(1, 2, kb_report, sizeof(kb_report));
+            // Update persistent keyboard state and send report on interface 1.
+            // State is re-sent every uart_cmd_process() call to keep keys held.
+            kb_modifier_state = data_buf[0];
+            kb_keycode_state = data_buf[1];
+            send_kb_report();
             return true;
         }
         default:
@@ -257,6 +265,13 @@ bool uart_cmd_process() {
                 break;
             }
         }
+    }
+
+    // Re-send keyboard state every loop iteration to keep keys held.
+    // This ensures the key stays pressed even if the endpoint was busy
+    // or another report on interface 1 was sent in between.
+    if (kb_modifier_state != 0 || kb_keycode_state != 0) {
+        send_kb_report();
     }
 
     return injected;
