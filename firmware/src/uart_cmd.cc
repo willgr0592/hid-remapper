@@ -2,7 +2,7 @@
 #include <cstring>
 
 #include <tusb.h>
-#include "hardware/uart.h" //s
+#include "hardware/uart.h"
 
 #include "descriptor_parser.h"
 #include "remapper.h"
@@ -91,6 +91,7 @@ static uint16_t button_state = 0;
 // Persistent keyboard state — kept across commands so keys stay held
 static uint8_t kb_modifier_state = 0;
 static uint8_t kb_keycode_state = 0;
+static bool kb_tap_release_pending = false;  // KEY_TAP: need to send key-up on next loop
 
 static void send_kb_report() {
     uint8_t kb_report[8] = {0};
@@ -201,15 +202,16 @@ static bool execute_cmd() {
             return true;
         }
         case UART_CMD_KEY_TAP: {
-            // Single-shot: send ONE key-down report, then immediately clear state.
-            // The key appears in exactly one HID report — no 1kHz re-sending.
-            // Next loop iteration sees state=0, so no re-send happens.
+            // Single-shot: send ONE key-down report, then defer key-up to next loop.
+            // We can't send key-up immediately because the USB endpoint is still
+            // busy transmitting the key-down — tud_hid_n_report() would fail and
+            // the host would see the key held forever.
             kb_modifier_state = data_buf[0];
             kb_keycode_state = data_buf[1];
-            send_kb_report();           // one report with key pressed
+            send_kb_report();           // key-down report
             kb_modifier_state = 0;
             kb_keycode_state = 0;
-            send_kb_report();           // immediate release report
+            kb_tap_release_pending = true;  // key-up sent on next loop iteration
             return true;
         }
         default:
@@ -278,6 +280,17 @@ bool uart_cmd_process() {
                 break;
             }
         }
+    }
+
+    // KEY_TAP deferred release: send key-up when the USB endpoint is ready.
+    // On the loop iteration after a KEY_TAP key-down, the endpoint should be
+    // free (~1ms later). If it's still busy, we retry next loop automatically.
+    if (kb_tap_release_pending) {
+        uint8_t kb_report[8] = {0};
+        if (tud_hid_n_report(1, 2, kb_report, sizeof(kb_report))) {
+            kb_tap_release_pending = false;
+        }
+        // else: endpoint still busy, retry next loop iteration
     }
 
     // Re-send keyboard state every loop iteration to keep keys held.
