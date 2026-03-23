@@ -1,291 +1,411 @@
-#include <cstdio>
-#include <cstring>
-
-#include <tusb.h>
-#include "hardware/uart.h"
-
-#include "descriptor_parser.h"
+#include "xbox.h"
+#include "constants.h"
 #include "remapper.h"
-#include "uart_cmd.h"
 
-// We use uart0 which is already initialized by stdio_init_all() on GPIO 0 (TX) / GPIO 1 (RX).
-// Baud rate is set by PICO_DEFAULT_UART_BAUD_RATE (921600 from CMakeLists.txt).
-// The CP2102 module on the other end must match this baud rate.
-#define UART_CMD_INST uart0
+#define NXDEVS 8
 
-// Fake device identity for the UART command source.
-// This registers as a separate input device in the remapper so UART
-// commands get combined with real mouse input via unmapped passthrough.
-#define UART_FAKE_VID       0x0002
-#define UART_FAKE_PID       0x0002
-#define UART_FAKE_INTERFACE 0x0201
+// Xbox controllers have the vertical axes inverted compared to the standard
+// HID convention. We use logical_minimum=32767 and logical_maximum=-32768 for
+// those axes in the fake report descriptor below. This happens to give the
+// correct results when we scale the values to 0-255 range.
 
-// HID report descriptor for the fake UART input device.
-// No Report ID. Matches G600 mouse usages so unmapped passthrough works.
-// Report layout (8 bytes):
-//   Bytes 0-1: Buttons 1-16 (16 x 1-bit, absolute)
-//   Bytes 2-3: X (int16_t, relative)
-//   Bytes 4-5: Y (int16_t, relative)
-//   Byte  6:   Wheel (int8_t, relative)
-//   Byte  7:   AC Pan (int8_t, relative)
-static const uint8_t uart_fake_descriptor[] = {
-    0x05, 0x01,        // Usage Page (Generic Desktop)
-    0x09, 0x02,        // Usage (Mouse)
+static const uint8_t xbox_one_descriptor[] = {
+    0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
+    0x09, 0x05,        // Usage (Game Pad)
     0xA1, 0x01,        // Collection (Application)
-    0x09, 0x01,        //   Usage (Pointer)
-    0xA1, 0x00,        //   Collection (Physical)
-
-    // 16 buttons
-    0x05, 0x09,        //     Usage Page (Button)
-    0x19, 0x01,        //     Usage Minimum (1)
-    0x29, 0x10,        //     Usage Maximum (16)
-    0x15, 0x00,        //     Logical Minimum (0)
-    0x25, 0x01,        //     Logical Maximum (1)
-    0x75, 0x01,        //     Report Size (1)
-    0x95, 0x10,        //     Report Count (16)
-    0x81, 0x02,        //     Input (Data,Var,Abs)
-
-    // X, Y (16-bit signed relative)
-    0x05, 0x01,        //     Usage Page (Generic Desktop)
-    0x09, 0x30,        //     Usage (X)
-    0x09, 0x31,        //     Usage (Y)
-    0x16, 0x00, 0x80,  //     Logical Minimum (-32768)
-    0x26, 0xFF, 0x7F,  //     Logical Maximum (32767)
-    0x75, 0x10,        //     Report Size (16)
-    0x95, 0x02,        //     Report Count (2)
-    0x81, 0x06,        //     Input (Data,Var,Rel)
-
-    // Wheel (8-bit signed relative)
-    0x09, 0x38,        //     Usage (Wheel)
-    0x15, 0x80,        //     Logical Minimum (-128)
-    0x25, 0x7F,        //     Logical Maximum (127)
-    0x75, 0x08,        //     Report Size (8)
-    0x95, 0x01,        //     Report Count (1)
-    0x81, 0x06,        //     Input (Data,Var,Rel)
-
-    // AC Pan (8-bit signed relative)
-    0x05, 0x0C,        //     Usage Page (Consumer)
-    0x0A, 0x38, 0x02,  //     Usage (AC Pan)
-    0x15, 0x80,        //     Logical Minimum (-128)
-    0x25, 0x7F,        //     Logical Maximum (127)
-    0x75, 0x08,        //     Report Size (8)
-    0x95, 0x01,        //     Report Count (1)
-    0x81, 0x06,        //     Input (Data,Var,Rel)
-
-    0xC0,              //   End Collection
+    0x85, 0x20,        //   Report ID (32)
+    0x75, 0x08,        //   Report Size (8)
+    0x95, 0x03,        //   Report Count (3)
+    0x81, 0x03,        //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x25, 0x01,        //   Logical Maximum (1)
+    0x75, 0x01,        //   Report Size (1)
+    0x95, 0x10,        //   Report Count (16)
+    0x05, 0x09,        //   Usage Page (Button)
+    0x19, 0x01,        //   Usage Minimum (0x01)
+    0x29, 0x10,        //   Usage Maximum (0x10)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x75, 0x10,        //   Report Size (16)
+    0x95, 0x02,        //   Report Count (2)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x26, 0xFF, 0x03,  //   Logical Maximum (1023)
+    0x05, 0x02,        //   Usage Page (Sim Ctrls)
+    0x09, 0xC5,        //   Usage (Brake)
+    0x09, 0xC4,        //   Usage (Accelerator)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x95, 0x01,        //   Report Count (1)
+    0x05, 0x01,        //   Usage Page (Generic Desktop Ctrls)
+    0x16, 0x00, 0x80,  //   Logical Minimum (-32768)
+    0x26, 0xFF, 0x7F,  //   Logical Maximum (32767)
+    0x09, 0x30,        //   Usage (X)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x26, 0x00, 0x80,  //   Logical Maximum (-32768)
+    0x16, 0xFF, 0x7F,  //   Logical Minimum (32767)
+    0x09, 0x31,        //   Usage (Y)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x16, 0x00, 0x80,  //   Logical Minimum (-32768)
+    0x26, 0xFF, 0x7F,  //   Logical Maximum (32767)
+    0x09, 0x32,        //   Usage (Z)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x26, 0x00, 0x80,  //   Logical Maximum (-32768)
+    0x16, 0xFF, 0x7F,  //   Logical Minimum (32767)
+    0x09, 0x35,        //   Usage (Rz)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x75, 0x08,        //   Report Size (8)
+    0x95, 0x10,        //   Report Count (16)
+    0x81, 0x03,        //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x95, 0x01,        //   Report Count (1)
+    0x05, 0x0C,        //   Usage Page (Consumer)
+    0x09, 0x85,        //   Usage (Order Movie)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,  //   Logical Maximum (255)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x85, 0x07,        //   Report ID (7)
+    0x75, 0x08,        //   Report Size (8)
+    0x95, 0x03,        //   Report Count (3)
+    0x81, 0x03,        //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x75, 0x01,        //   Report Size (1)
+    0x95, 0x01,        //   Report Count (1)
+    0x05, 0x09,        //   Usage Page (Button)
+    0x09, 0x11,        //   Usage (0x11)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x25, 0x01,        //   Logical Maximum (1)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x95, 0x07,        //   Report Count (7)
+    0x81, 0x03,        //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
     0xC0,              // End Collection
 };
 
-// Report structure matching uart_fake_descriptor (8 bytes, no report ID)
-struct __attribute__((packed)) uart_mouse_report_t {
-    uint16_t buttons;
-    int16_t dx;
-    int16_t dy;
-    int8_t wheel;
-    int8_t pan;
+static const uint8_t xbox_360_descriptor[] = {
+    0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
+    0x09, 0x05,        // Usage (Game Pad)
+    0xA1, 0x01,        // Collection (Application)
+    0x75, 0x08,        //   Report Size (8)
+    0x95, 0x02,        //   Report Count (2)
+    0x81, 0x03,        //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x75, 0x01,        //   Report Size (1)
+    0x95, 0x10,        //   Report Count (16)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x25, 0x01,        //   Logical Maximum (1)
+    0x06, 0xF9, 0xFF,  //   Usage Page (Vendor Defined 0xFFF9)
+    0x09, 0x03,        //   Usage (0x03)
+    0x09, 0x04,        //   Usage (0x04)
+    0x09, 0x01,        //   Usage (0x01)
+    0x09, 0x02,        //   Usage (0x02)
+    0x05, 0x09,        //   Usage Page (Button)
+    0x09, 0x0A,        //   Usage (0x0A)
+    0x09, 0x09,        //   Usage (0x09)
+    0x09, 0x0B,        //   Usage (0x0B)
+    0x09, 0x0C,        //   Usage (0x0C)
+    0x09, 0x05,        //   Usage (0x05)
+    0x09, 0x06,        //   Usage (0x06)
+    0x09, 0x0D,        //   Usage (0x0D)
+    0x09, 0x0E,        //   Usage (0x0E)
+    0x09, 0x02,        //   Usage (0x02)
+    0x09, 0x03,        //   Usage (0x03)
+    0x09, 0x01,        //   Usage (0x01)
+    0x09, 0x04,        //   Usage (0x04)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x75, 0x08,        //   Report Size (8)
+    0x95, 0x02,        //   Report Count (2)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,  //   Logical Maximum (255)
+    0x05, 0x01,        //   Usage Page (Generic Desktop Ctrls)
+    0x09, 0x33,        //   Usage (Rx)
+    0x09, 0x34,        //   Usage (Ry)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x75, 0x10,        //   Report Size (16)
+    0x95, 0x01,        //   Report Count (1)
+    0x16, 0x00, 0x80,  //   Logical Minimum (-32768)
+    0x26, 0xFF, 0x7F,  //   Logical Maximum (32767)
+    0x09, 0x30,        //   Usage (X)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x26, 0x00, 0x80,  //   Logical Maximum (-32768)
+    0x16, 0xFF, 0x7F,  //   Logical Minimum (32767)
+    0x09, 0x31,        //   Usage (Y)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x16, 0x00, 0x80,  //   Logical Minimum (-32768)
+    0x26, 0xFF, 0x7F,  //   Logical Maximum (32767)
+    0x09, 0x32,        //   Usage (Z)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x26, 0x00, 0x80,  //   Logical Maximum (-32768)
+    0x16, 0xFF, 0x7F,  //   Logical Minimum (32767)
+    0x09, 0x35,        //   Usage (Rz)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x75, 0x08,        //   Report Size (8)
+    0x95, 0x06,        //   Report Count (6)
+    0x81, 0x03,        //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0xC0,              // End Collection
 };
 
-// Persistent button state (buttons are absolute, so we track state across commands)
-static uint16_t button_state = 0;
+static uint8_t init1[] = { 0x05, 0x20, 0x01, 0x01, 0x00 };
+static uint8_t init2[] = { 0x05, 0x20, 0x02, 0x0f, 0x06 };
+static uint8_t init3[] = { 0x06, 0x20, 0x03, 0x02, 0x01, 0x00 };
 
-// Persistent keyboard state — kept across commands so keys stay held
-static uint8_t kb_modifier_state = 0;
-static uint8_t kb_keycode_state = 0;
-
-static void send_kb_report() {
-    uint8_t kb_report[8] = {0};
-    kb_report[0] = kb_modifier_state;
-    // kb_report[1] = 0 (reserved)
-    kb_report[2] = kb_keycode_state;
-    tud_hid_n_report(1, 2, kb_report, sizeof(kb_report));
-}
-
-// Protocol parser state machine
-enum ParseState : uint8_t {
-    WAIT_SYNC,
-    READ_CMD,
-    READ_DATA,
-    READ_CHECKSUM,
+enum class XType : int8_t {
+    UNKNOWN = 0,
+    XBOX_360 = 1,
+    XBOX_ONE = 2,
 };
 
-static ParseState parse_state = WAIT_SYNC;
-static uint8_t cmd = 0;
-static uint8_t data_buf[8];
-static uint8_t data_idx = 0;
-static uint8_t data_len = 0;
+struct xdev_t {
+    XType type = XType::UNKNOWN;
+    uint8_t dev_addr = 0;
+    uint8_t itf_num = 0;
+    uint8_t in_ep = 0;
+    uint16_t in_ep_size = 0;
+    uint8_t out_ep = 0;
+    uint16_t out_ep_size = 0;
+    int setup_stage = 0;
+    uint8_t buf[64] = { 0 };
+};
 
-static uint8_t cmd_data_length(uint8_t c) {
-    switch (c) {
-        case UART_CMD_MOVE:    return 4;
-        case UART_CMD_BUTTONS: return 2;
-        case UART_CMD_SCROLL:  return 2;
-        case UART_CMD_REPORT:  return 8;
-        case UART_CMD_CLICK:   return 2;
-        case UART_CMD_KEY:     return 2;
-        case UART_CMD_KEY_TAP: return 2;
-        default:               return 0;
+static struct xdev_t xdevs[NXDEVS];
+
+static struct xdev_t* allocate_xdev() {
+    for (int i = 0; i < NXDEVS; i++) {
+        if (xdevs[i].dev_addr == 0) {
+            return &xdevs[i];
+        }
     }
+
+    return nullptr;
 }
 
-static void send_response(uint8_t resp_cmd, uint8_t status) {
-    if (uart_is_writable(UART_CMD_INST)) {
-        uart_putc_raw(UART_CMD_INST, UART_CMD_RESP);
+static struct xdev_t* get_xdev_by_itf(uint8_t dev_addr, uint8_t itf_num) {
+    for (int i = 0; i < NXDEVS; i++) {
+        if ((xdevs[i].dev_addr == dev_addr) && (xdevs[i].itf_num == itf_num)) {
+            return &xdevs[i];
+        }
     }
-    if (uart_is_writable(UART_CMD_INST)) {
-        uart_putc_raw(UART_CMD_INST, resp_cmd);
-    }
-    if (uart_is_writable(UART_CMD_INST)) {
-        uart_putc_raw(UART_CMD_INST, status);
-    }
+
+    return nullptr;
 }
 
-static void inject_report(int16_t dx, int16_t dy, int8_t wheel, int8_t pan) {
-    uart_mouse_report_t report;
-    report.buttons = button_state;
-    report.dx = dx;
-    report.dy = dy;
-    report.wheel = wheel;
-    report.pan = pan;
+static struct xdev_t* get_xdev_by_ep(uint8_t dev_addr, uint8_t ep) {
+    for (int i = 0; i < NXDEVS; i++) {
+        if ((xdevs[i].dev_addr == dev_addr) &&
+            ((xdevs[i].in_ep == ep) || (xdevs[i].out_ep == ep))) {
+            return &xdevs[i];
+        }
+    }
 
-    handle_received_report((const uint8_t*) &report, sizeof(report), UART_FAKE_INTERFACE);
+    return nullptr;
 }
 
-static bool execute_cmd() {
-    switch (cmd) {
-        case UART_CMD_MOVE: {
-            int16_t dx = (int16_t) (data_buf[0] | (data_buf[1] << 8));
-            int16_t dy = (int16_t) (data_buf[2] | (data_buf[3] << 8));
-            inject_report(dx, dy, 0, 0);
-            return true;
+bool xboxh_init(void) {
+    return true;
+}
+
+bool xboxh_open(uint8_t rhport, uint8_t dev_addr, tusb_desc_interface_t const* desc_itf, uint16_t max_len) {
+    if (max_len < sizeof(tusb_desc_interface_t) + desc_itf->bNumEndpoints * sizeof(tusb_desc_endpoint_t)) {
+        return false;
+    }
+
+    struct xdev_t* xdev = allocate_xdev();
+    if (xdev == nullptr) {
+        return false;
+    }
+
+    if ((desc_itf->bNumEndpoints == 2) &&
+        (desc_itf->bInterfaceClass == 255) &&
+        (desc_itf->bInterfaceSubClass == 71) &&
+        (desc_itf->bInterfaceProtocol == 208)) {
+        xdev->type = XType::XBOX_ONE;
+    } else if ((desc_itf->bNumEndpoints == 2) &&
+               (desc_itf->bInterfaceClass == 255) &&
+               (desc_itf->bInterfaceSubClass == 93) &&
+               (desc_itf->bInterfaceProtocol == 1)) {  // XXX this is 129 for wireless
+        xdev->type = XType::XBOX_360;
+    } else {
+        return false;
+    }
+
+    uint8_t in_ep = 0;
+    uint16_t in_ep_size = 0;
+    uint8_t out_ep = 0;
+    uint16_t out_ep_size = 0;
+
+    uint8_t const* p_desc = (uint8_t const*) desc_itf;
+
+    while (true) {
+        p_desc = tu_desc_next(p_desc);
+        if (p_desc >= ((uint8_t*) desc_itf) + max_len) {
+            break;
         }
-        case UART_CMD_BUTTONS: {
-            button_state = data_buf[0] | (data_buf[1] << 8);
-            inject_report(0, 0, 0, 0);
-            return true;
+        tusb_desc_endpoint_t const* desc_ep = (tusb_desc_endpoint_t const*) p_desc;
+        if (desc_ep->bDescriptorType != TUSB_DESC_ENDPOINT) {
+            continue;
         }
-        case UART_CMD_SCROLL: {
-            int8_t wheel = (int8_t) data_buf[0];
-            int8_t pan = (int8_t) data_buf[1];
-            inject_report(0, 0, wheel, pan);
-            return true;
+        if (desc_ep->bmAttributes.xfer != TUSB_XFER_INTERRUPT) {
+            continue;
         }
-        case UART_CMD_REPORT: {
-            button_state = data_buf[0] | (data_buf[1] << 8);
-            int16_t dx = (int16_t) (data_buf[2] | (data_buf[3] << 8));
-            int16_t dy = (int16_t) (data_buf[4] | (data_buf[5] << 8));
-            int8_t wheel = (int8_t) data_buf[6];
-            int8_t pan = (int8_t) data_buf[7];
-            inject_report(dx, dy, wheel, pan);
-            return true;
-        }
-        case UART_CMD_CLICK: {
-            uint8_t btn = data_buf[0];
-            uint8_t action = data_buf[1];
-            if (btn < 16) {
-                if (action) {
-                    button_state |= (1 << btn);
-                } else {
-                    button_state &= ~(1 << btn);
-                }
-                inject_report(0, 0, 0, 0);
-                return true;
-            }
+        if (!tuh_edpt_open(dev_addr, desc_ep)) {
             return false;
         }
-        case UART_CMD_KEY: {
-            // Update persistent keyboard state and send report on interface 1.
-            // State is re-sent every uart_cmd_process() call to keep keys held.
-            kb_modifier_state = data_buf[0];
-            kb_keycode_state = data_buf[1];
-            send_kb_report();
-            return true;
+        uint8_t ep_addr = desc_ep->bEndpointAddress;
+        if (tu_edpt_dir(ep_addr) == TUSB_DIR_IN) {
+            in_ep = ep_addr;
+            in_ep_size = tu_edpt_packet_size(desc_ep);
+        } else {
+            out_ep = ep_addr;
+            out_ep_size = tu_edpt_packet_size(desc_ep);
         }
-        case UART_CMD_KEY_TAP: {
-            // Single-shot: send ONE key-down report, then immediately clear state.
-            // The key appears in exactly one HID report — no 1kHz re-sending.
-            // Next loop iteration sees state=0, so no re-send happens.
-            kb_modifier_state = data_buf[0];
-            kb_keycode_state = data_buf[1];
-            send_kb_report();           // one report with key pressed
-            kb_modifier_state = 0;
-            kb_keycode_state = 0;
-            send_kb_report();           // immediate release report
-            return true;
-        }
+    }
+
+    xdev->dev_addr = dev_addr;
+    xdev->itf_num = desc_itf->bInterfaceNumber;
+    xdev->in_ep = in_ep;
+    xdev->in_ep_size = in_ep_size;
+    if (xdev->in_ep_size > sizeof(xdev->buf)) {
+        xdev->in_ep_size = sizeof(xdev->buf);
+    }
+    xdev->out_ep = out_ep;
+    xdev->out_ep_size = out_ep_size;
+
+    return true;
+}
+
+static bool xxfer_in(struct xdev_t* xdev) {
+    if (!usbh_edpt_claim(xdev->dev_addr, xdev->in_ep)) {
+        return false;
+    }
+
+    if (!usbh_edpt_xfer(xdev->dev_addr, xdev->in_ep, xdev->buf, xdev->in_ep_size)) {
+        usbh_edpt_release(xdev->dev_addr, xdev->in_ep);
+        return false;
+    }
+
+    return true;
+}
+
+static bool xxfer_out(struct xdev_t* xdev, uint8_t* buf, uint16_t len) {
+    if (!usbh_edpt_claim(xdev->dev_addr, xdev->out_ep)) {
+        return false;
+    }
+
+    if (!usbh_edpt_xfer(xdev->dev_addr, xdev->out_ep, buf, len)) {
+        usbh_edpt_release(xdev->dev_addr, xdev->out_ep);
+        return false;
+    }
+
+    return true;
+}
+
+static void process_setup(struct xdev_t* xdev) {
+    switch (xdev->setup_stage) {
+        case 1:
+            xxfer_out(xdev, init1, sizeof(init1));
+            break;
+        case 2:
+            xxfer_out(xdev, init2, sizeof(init2));
+            break;
+        case 3:
+            xxfer_out(xdev, init3, sizeof(init3));
+            break;
+        case 4:
+            xdev->setup_stage = 0;
+            xxfer_in(xdev);
+
+            uint8_t hub_addr;
+            uint8_t hub_port;
+            tuh_get_hub_addr_port(xdev->dev_addr, &hub_addr, &hub_port);
+            // We use the same VID/PID for all Xbox controllers to be able to apply quirks.
+            // We should probably find another way to signal that it's an Xbox controller and pass the real ones.
+            descriptor_received_callback(
+                VENDOR_ID_MICROSOFT,
+                PRODUCT_ID_MICROSOFT_XBOX_WIRELESS_CONTROLLER,
+                xbox_one_descriptor,
+                sizeof(xbox_one_descriptor),
+                (uint16_t) (xdev->dev_addr << 8) | xdev->itf_num,
+                hub_port, xdev->itf_num);
+            usbh_driver_set_config_complete(xdev->dev_addr, xdev->itf_num);
+            break;
+    }
+}
+
+bool xboxh_set_config(uint8_t dev_addr, uint8_t itf_num) {
+    struct xdev_t* xdev = get_xdev_by_itf(dev_addr, itf_num);
+    if (xdev == nullptr) {
+        return false;
+    }
+
+    switch (xdev->type) {
+        case XType::XBOX_ONE:
+            xdev->setup_stage = 1;
+            process_setup(xdev);
+            break;
+        case XType::XBOX_360:
+            xxfer_in(xdev);
+
+            uint8_t hub_addr;
+            uint8_t hub_port;
+            tuh_get_hub_addr_port(xdev->dev_addr, &hub_addr, &hub_port);
+            // We use the same VID/PID for all Xbox controllers to be able to apply quirks.
+            // We should probably find another way to signal that it's an Xbox controller and pass the real ones.
+            descriptor_received_callback(
+                VENDOR_ID_MICROSOFT,
+                PRODUCT_ID_MICROSOFT_XBOX_360_CONTROLLER,
+                xbox_360_descriptor,
+                sizeof(xbox_360_descriptor),
+                (uint16_t) (xdev->dev_addr << 8) | xdev->itf_num,
+                hub_port, xdev->itf_num);
+            usbh_driver_set_config_complete(xdev->dev_addr, xdev->itf_num);
+            break;
         default:
-            return false;
+            break;
     }
+
+    return true;
 }
 
-void uart_cmd_init() {
-    // Register the fake device descriptor so the remapper knows about our usages.
-    // With unmapped_passthrough enabled (default), these usages will automatically
-    // map to matching output usages in the G600 descriptor.
-    parse_descriptor(UART_FAKE_VID, UART_FAKE_PID,
-                     uart_fake_descriptor, sizeof(uart_fake_descriptor),
-                     UART_FAKE_INTERFACE, 0);
-}
+bool xboxh_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes) {
+    struct xdev_t* xdev = get_xdev_by_ep(dev_addr, ep_addr);
+    if (xdev == nullptr) {
+        return false;
+    }
 
-bool uart_cmd_process() {
-    bool injected = false;
-
-    while (uart_is_readable(UART_CMD_INST)) {
-        uint8_t c = uart_getc(UART_CMD_INST);
-
-        switch (parse_state) {
-            case WAIT_SYNC:
-                if (c == UART_CMD_SYNC) {
-                    parse_state = READ_CMD;
-                }
-                break;
-
-            case READ_CMD:
-                cmd = c;
-                data_len = cmd_data_length(cmd);
-                if (data_len == 0) {
-                    // Unknown command
-                    send_response(cmd, 0x00);
-                    parse_state = WAIT_SYNC;
-                } else {
-                    data_idx = 0;
-                    parse_state = READ_DATA;
-                }
-                break;
-
-            case READ_DATA:
-                data_buf[data_idx++] = c;
-                if (data_idx >= data_len) {
-                    parse_state = READ_CHECKSUM;
-                }
-                break;
-
-            case READ_CHECKSUM: {
-                // Verify XOR checksum over cmd + data bytes
-                uint8_t checksum = cmd;
-                for (uint8_t i = 0; i < data_len; i++) {
-                    checksum ^= data_buf[i];
-                }
-                if (checksum == c) {
-                    bool ok = execute_cmd();
-                    send_response(cmd, ok ? 0x01 : 0x00);
-                    if (ok) {
-                        injected = true;
+    switch (xdev->type) {
+        case XType::XBOX_ONE:
+            if (ep_addr == xdev->in_ep) {
+                if (xferred_bytes > 0) {
+                    if ((xdev->buf[0] == 0x07) && (xdev->buf[1] == 0x30)) {
+                        // this kind of packet requires ack
+                        uint8_t ack[] = { 0x01, 0x20, xdev->buf[2], 9, 0x00, 0x07, 0x20, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00 };
+                        xxfer_out(xdev, ack, sizeof(ack));  // we should have a queue or something
                     }
-                } else {
-                    send_response(cmd, 0x00);
+                    if ((xdev->buf[0] == 0x20) || (xdev->buf[0] == 0x07)) {  // only pass stuff we know
+                        report_received_callback(xdev->dev_addr, xdev->itf_num, xdev->buf, xferred_bytes);
+                    }
                 }
-                parse_state = WAIT_SYNC;
-                break;
+                xxfer_in(xdev);
             }
+            if (ep_addr == xdev->out_ep) {
+                if (xdev->setup_stage != 0) {
+                    xdev->setup_stage++;
+                    process_setup(xdev);
+                }
+            }
+            break;
+        case XType::XBOX_360:
+            if (ep_addr == xdev->in_ep) {
+                if ((xferred_bytes > 0) && (xdev->buf[0] == 0x00)) {
+                    report_received_callback(xdev->dev_addr, xdev->itf_num, xdev->buf, xferred_bytes);
+                }
+                xxfer_in(xdev);
+            }
+            break;
+        default:
+            break;
+    }
+    return true;
+}
+
+void xboxh_close(uint8_t dev_addr) {
+    for (int i = 0; i < NXDEVS; i++) {
+        if (xdevs[i].dev_addr == dev_addr) {
+            umount_callback(dev_addr, xdevs[i].itf_num);
+            xdevs[i] = {};
         }
     }
-
-    // Re-send keyboard state every loop iteration to keep keys held.
-    // This ensures the key stays pressed even if the endpoint was busy
-    // or another report on interface 1 was sent in between.
-    if (kb_modifier_state != 0 || kb_keycode_state != 0) {
-        send_kb_report();
-    }
-
-    return injected;
 }
