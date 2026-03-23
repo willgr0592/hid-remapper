@@ -122,6 +122,7 @@ static uint8_t cmd_data_length(uint8_t c) {
         case UART_CMD_REPORT:  return 8;
         case UART_CMD_CLICK:   return 2;
         case UART_CMD_KEY:     return 2;
+        case UART_CMD_KEY_TAP: return 2;
         default:               return 0;
     }
 }
@@ -197,6 +198,18 @@ static bool execute_cmd() {
             kb_modifier_state = data_buf[0];
             kb_keycode_state = data_buf[1];
             send_kb_report();
+            return true;
+        }
+        case UART_CMD_KEY_TAP: {
+            // Single-shot: send ONE key-down report, then immediately clear state.
+            // The key appears in exactly one HID report — no 1kHz re-sending.
+            // Next loop iteration sees state=0, so no re-send happens.
+            kb_modifier_state = data_buf[0];
+            kb_keycode_state = data_buf[1];
+            send_kb_report();           // one report with key pressed
+            kb_modifier_state = 0;
+            kb_keycode_state = 0;
+            send_kb_report();           // immediate release report
             return true;
         }
         default:
