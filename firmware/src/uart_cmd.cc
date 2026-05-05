@@ -21,7 +21,7 @@
 #define UART_FAKE_INTERFACE 0x0201
 
 // HID report descriptor for the fake UART input device.
-// No Report ID. Matches G600 mouse usages so unmapped passthrough works.
+// No Report ID. Matches kb_mouse descriptor usages so unmapped passthrough works.
 // Report layout (8 bytes):
 //   Bytes 0-1: Buttons 1-16 (16 x 1-bit, absolute)
 //   Bytes 2-3: X (int16_t, relative)
@@ -129,15 +129,8 @@ static uint8_t cmd_data_length(uint8_t c) {
 }
 
 static void send_response(uint8_t resp_cmd, uint8_t status) {
-    if (uart_is_writable(UART_CMD_INST)) {
-        uart_putc_raw(UART_CMD_INST, UART_CMD_RESP);
-    }
-    if (uart_is_writable(UART_CMD_INST)) {
-        uart_putc_raw(UART_CMD_INST, resp_cmd);
-    }
-    if (uart_is_writable(UART_CMD_INST)) {
-        uart_putc_raw(UART_CMD_INST, status);
-    }
+    uint8_t resp[3] = { UART_CMD_RESP, resp_cmd, status };
+    uart_write_blocking(UART_CMD_INST, resp, sizeof(resp));
 }
 
 static void inject_report(int16_t dx, int16_t dy, int8_t wheel, int8_t pan) {
@@ -222,7 +215,7 @@ static bool execute_cmd() {
 void uart_cmd_init() {
     // Register the fake device descriptor so the remapper knows about our usages.
     // With unmapped_passthrough enabled (default), these usages will automatically
-    // map to matching output usages in the G600 descriptor.
+    // map to matching output usages in the kb_mouse descriptor.
     parse_descriptor(UART_FAKE_VID, UART_FAKE_PID,
                      uart_fake_descriptor, sizeof(uart_fake_descriptor),
                      UART_FAKE_INTERFACE, 0);
