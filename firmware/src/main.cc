@@ -58,13 +58,8 @@ uint16_t prev_adc_state[NADCS] = { 0 };
 #endif
 
 void print_stats_maybe() {
-    uint64_t now = time_us_64();
-    if (now > next_print) {
-        print_stats();
-        while (next_print < now) {
-            next_print += 1000000;
-        }
-    }
+    // Stats printing disabled — stdout shares UART0 with the command channel.
+    (void) next_print;
 }
 
 void __no_inline_not_in_flash_func(sof_handler)(uint32_t frame_count) {
@@ -72,14 +67,22 @@ void __no_inline_not_in_flash_func(sof_handler)(uint32_t frame_count) {
 }
 
 bool do_send_report(uint8_t interface, const uint8_t* report_with_id, uint8_t len) {
+    uint8_t report_id = report_with_id[0];
+
+    // Route keyboard (ID 2), LED output (ID 98), and monitor (ID 101) to interface 1.
+    // Mouse (ID 1) and everything else goes to interface 0.
+    uint8_t target_itf = ((report_id == REPORT_ID_KEYBOARD) ||
+                          (report_id == REPORT_ID_LEDS)     ||
+                          (report_id == REPORT_ID_MONITOR)) ? 1 : 0;
+
     if (tud_suspended() &&
         (our_descriptor->should_cause_wakeup != nullptr) &&
-        our_descriptor->should_cause_wakeup(report_with_id[0], report_with_id + 1, len - 1)) {
+        our_descriptor->should_cause_wakeup(report_id, report_with_id + 1, len - 1)) {
         tud_remote_wakeup();
     } else {
-        tud_hid_n_report(interface, report_with_id[0], report_with_id + 1, len - 1);
+        tud_hid_n_report(target_itf, report_id, report_with_id + 1, len - 1);
     }
-    return true;  // XXX?
+    return true;
 }
 
 void gpio_pins_init() {
@@ -303,7 +306,7 @@ int main() {
             set_gpio_dir();
             set_gpio_dir_pending = false;
         }
-        if (tud_hid_n_ready(0) || tud_suspended()) {
+        if ((tud_hid_n_ready(0) && tud_hid_n_ready(1)) || tud_suspended()) {
             send_report(do_send_report);
         }
         if (monitor_enabled && tud_hid_n_ready(1)) {
