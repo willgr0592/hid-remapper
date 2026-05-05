@@ -14,11 +14,6 @@
 #define USB_VID 0x045E
 #define USB_PID 0x0750
 
-// Report IDs matching our HID descriptors
-const uint8_t REPORT_ID_MOUSE = 1;
-const uint8_t REPORT_ID_KEYBOARD = 2;
-const uint8_t REPORT_ID_CONSUMER = 3;
-
 tusb_desc_device_t desc_device = {
     .bLength = sizeof(tusb_desc_device_t),
     .bDescriptorType = TUSB_DESC_DEVICE,

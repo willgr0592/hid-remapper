@@ -5,10 +5,6 @@
 #include "ps_auth.h"
 #include "remapper.h"
 
-const uint8_t REPORT_ID_MOUSE = 1;
-const uint8_t REPORT_ID_KEYBOARD = 2;
-const uint8_t REPORT_ID_CONSUMER = 3;
-
 const uint8_t our_report_descriptor_kb_mouse[] = {
     // Descriptor Mouse (Modified from G600 to add Report ID 1) - 74 bytes
     0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x85, 0x01, 0x09, 0x01, 0xA1, 0x00, 0x05, 0x09, 0x19, 0x01,
