@@ -18,6 +18,7 @@
 //   0x04 REPORT   - 8 data bytes: uint16_t buttons (LE), int16_t dx (LE), int16_t dy (LE), int8_t wheel, int8_t pan
 //   0x05 CLICK    - 2 data bytes: uint8_t button_index (0-15), uint8_t action (0=release, 1=press)
 //   0x06 KEY      - 2 data bytes: uint8_t modifier_mask, uint8_t keycode (USB HID keycode, 0=release)
+//   0x07 KEY_TAP  - 2 data bytes: transient modifier/keycode tap queued alongside held KEY state
 //
 // Response (sent back on TX after each command):
 //   [0x55] [CMD] [STATUS]
@@ -32,7 +33,7 @@
 #define UART_CMD_REPORT   0x04
 #define UART_CMD_CLICK    0x05
 #define UART_CMD_KEY      0x06
-#define UART_CMD_KEY_TAP  0x07  // single-shot: sends ONE key-down report then auto-clears state
+#define UART_CMD_KEY_TAP  0x07  // queued single-shot tap; preserves the persistent KEY hold
 
 // Register fake device descriptor for UART input injection.
 // Call this from extra_init().

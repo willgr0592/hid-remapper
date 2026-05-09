@@ -88,17 +88,147 @@ struct __attribute__((packed)) uart_mouse_report_t {
 // Persistent button state (buttons are absolute, so we track state across commands)
 static uint16_t button_state = 0;
 
-// Persistent keyboard state — kept across commands so keys stay held
-static uint8_t kb_modifier_state = 0;
-static uint8_t kb_keycode_state = 0;
-static bool kb_tap_release_pending = false;  // KEY_TAP: need to send key-up on next loop
+// Persistent keyboard state - kept across commands so keys stay held
+// The boot keyboard report has six key slots, so transient taps can coexist
+// with the held key instead of replacing it.
+static constexpr uint8_t KB_REPORT_INTERFACE = 1;
+static constexpr uint8_t KB_REPORT_ID = 2;
+static constexpr uint8_t KB_REPORT_SIZE = 8;
+static constexpr uint8_t KB_REPORT_FIRST_KEY = 2;
+static constexpr uint8_t KB_REPORT_KEY_SLOTS = 6;
+static constexpr uint8_t KB_TAP_QUEUE_SIZE = 8;
 
-static void send_kb_report() {
-    uint8_t kb_report[8] = {0};
-    kb_report[0] = kb_modifier_state;
+struct kb_tap_state_t {
+    uint8_t modifier;
+    uint8_t keycode;
+};
+
+static uint8_t kb_hold_modifier_state = 0;
+static uint8_t kb_hold_keycode_state = 0;
+static bool kb_hold_report_dirty = false;
+
+static kb_tap_state_t kb_tap_queue[KB_TAP_QUEUE_SIZE] = {};
+static uint8_t kb_tap_queue_head = 0;
+static uint8_t kb_tap_queue_tail = 0;
+static uint8_t kb_tap_queue_count = 0;
+
+static kb_tap_state_t kb_active_tap = {};
+static bool kb_tap_active = false;
+static bool kb_tap_press_pending = false;
+static bool kb_tap_release_pending = false;
+
+static bool kb_has_held_key() {
+    return kb_hold_modifier_state != 0 || kb_hold_keycode_state != 0;
+}
+
+static bool kb_add_key(uint8_t* kb_report, uint8_t keycode) {
+    if (keycode == 0) {
+        return true;
+    }
+
+    for (uint8_t i = 0; i < KB_REPORT_KEY_SLOTS; i++) {
+        if (kb_report[KB_REPORT_FIRST_KEY + i] == keycode) {
+            return true;
+        }
+    }
+
+    for (uint8_t i = 0; i < KB_REPORT_KEY_SLOTS; i++) {
+        uint8_t& slot = kb_report[KB_REPORT_FIRST_KEY + i];
+        if (slot == 0) {
+            slot = keycode;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool send_kb_report(bool include_active_tap) {
+    uint8_t kb_report[KB_REPORT_SIZE] = {};
+    kb_report[0] = kb_hold_modifier_state;
     // kb_report[1] = 0 (reserved)
-    kb_report[2] = kb_keycode_state;
-    tud_hid_n_report(1, 2, kb_report, sizeof(kb_report));
+
+    if (!kb_add_key(kb_report, kb_hold_keycode_state)) {
+        return false;
+    }
+
+    if (include_active_tap && kb_tap_active) {
+        kb_report[0] |= kb_active_tap.modifier;
+        if (!kb_add_key(kb_report, kb_active_tap.keycode)) {
+            return false;
+        }
+    }
+
+    return tud_hid_n_report(KB_REPORT_INTERFACE, KB_REPORT_ID, kb_report, sizeof(kb_report));
+}
+
+static bool enqueue_kb_tap(uint8_t modifier, uint8_t keycode) {
+    if (modifier == 0 && keycode == 0) {
+        return false;
+    }
+
+    if (kb_tap_queue_count >= KB_TAP_QUEUE_SIZE) {
+        return false;
+    }
+
+    kb_tap_queue[kb_tap_queue_tail] = {modifier, keycode};
+    kb_tap_queue_tail = (uint8_t) ((kb_tap_queue_tail + 1) % KB_TAP_QUEUE_SIZE);
+    kb_tap_queue_count++;
+    return true;
+}
+
+static void start_next_kb_tap_if_idle() {
+    if (kb_tap_active || kb_tap_queue_count == 0) {
+        return;
+    }
+
+    kb_active_tap = kb_tap_queue[kb_tap_queue_head];
+    kb_tap_queue_head = (uint8_t) ((kb_tap_queue_head + 1) % KB_TAP_QUEUE_SIZE);
+    kb_tap_queue_count--;
+
+    kb_tap_active = true;
+    kb_tap_press_pending = true;
+    kb_tap_release_pending = false;
+}
+
+static void clear_active_kb_tap() {
+    kb_active_tap = {};
+    kb_tap_active = false;
+    kb_tap_press_pending = false;
+    kb_tap_release_pending = false;
+}
+
+static void service_kb_reports() {
+    start_next_kb_tap_if_idle();
+
+    if (kb_tap_press_pending) {
+        if (send_kb_report(true)) {
+            kb_tap_press_pending = false;
+            kb_tap_release_pending = true;
+        }
+        return;
+    }
+
+    if (kb_tap_release_pending) {
+        if (send_kb_report(false)) {
+            clear_active_kb_tap();
+            kb_hold_report_dirty = false;
+        }
+        return;
+    }
+
+    if (kb_hold_report_dirty) {
+        if (send_kb_report(false)) {
+            kb_hold_report_dirty = false;
+        }
+        return;
+    }
+
+    // Re-send held state periodically. If the endpoint is busy, the next loop
+    // will try again; taps above always take priority over this keepalive.
+    if (kb_has_held_key()) {
+        send_kb_report(false);
+    }
 }
 
 // Protocol parser state machine
@@ -187,25 +317,17 @@ static bool execute_cmd() {
             return false;
         }
         case UART_CMD_KEY: {
-            // Update persistent keyboard state and send report on interface 1.
-            // State is re-sent every uart_cmd_process() call to keep keys held.
-            kb_modifier_state = data_buf[0];
-            kb_keycode_state = data_buf[1];
-            send_kb_report();
+            // Update persistent keyboard state. The service step sends the
+            // actual report so held-key changes stay ordered with tap reports.
+            kb_hold_modifier_state = data_buf[0];
+            kb_hold_keycode_state = data_buf[1];
+            kb_hold_report_dirty = true;
             return true;
         }
         case UART_CMD_KEY_TAP: {
-            // Single-shot: send ONE key-down report, then defer key-up to next loop.
-            // We can't send key-up immediately because the USB endpoint is still
-            // busy transmitting the key-down — tud_hid_n_report() would fail and
-            // the host would see the key held forever.
-            kb_modifier_state = data_buf[0];
-            kb_keycode_state = data_buf[1];
-            send_kb_report();           // key-down report
-            kb_modifier_state = 0;
-            kb_keycode_state = 0;
-            kb_tap_release_pending = true;  // key-up sent on next loop iteration
-            return true;
+            // Queue a transient key press. It will be sent alongside the
+            // persistent held key, then released back to held-key-only state.
+            return enqueue_kb_tap(data_buf[0], data_buf[1]);
         }
         default:
             return false;
@@ -275,23 +397,7 @@ bool uart_cmd_process() {
         }
     }
 
-    // KEY_TAP deferred release: send key-up when the USB endpoint is ready.
-    // On the loop iteration after a KEY_TAP key-down, the endpoint should be
-    // free (~1ms later). If it's still busy, we retry next loop automatically.
-    if (kb_tap_release_pending) {
-        uint8_t kb_report[8] = {0};
-        if (tud_hid_n_report(1, 2, kb_report, sizeof(kb_report))) {
-            kb_tap_release_pending = false;
-        }
-        // else: endpoint still busy, retry next loop iteration
-    }
-
-    // Re-send keyboard state every loop iteration to keep keys held.
-    // This ensures the key stays pressed even if the endpoint was busy
-    // or another report on interface 1 was sent in between.
-    if (kb_modifier_state != 0 || kb_keycode_state != 0) {
-        send_kb_report();
-    }
+    service_kb_reports();
 
     return injected;
 }
