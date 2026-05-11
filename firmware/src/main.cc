@@ -79,10 +79,13 @@ bool do_send_report(uint8_t interface, const uint8_t* report_with_id, uint8_t le
         (our_descriptor->should_cause_wakeup != nullptr) &&
         our_descriptor->should_cause_wakeup(report_id, report_with_id + 1, len - 1)) {
         tud_remote_wakeup();
+        return false;
     } else {
-        tud_hid_n_report(target_itf, report_id, report_with_id + 1, len - 1);
+        if (!tud_hid_n_ready(target_itf)) {
+            return false;
+        }
+        return tud_hid_n_report(target_itf, report_id, report_with_id + 1, len - 1);
     }
-    return true;
 }
 
 void gpio_pins_init() {
@@ -306,7 +309,7 @@ int main() {
             set_gpio_dir();
             set_gpio_dir_pending = false;
         }
-        if ((tud_hid_n_ready(0) && tud_hid_n_ready(1)) || tud_suspended()) {
+        if (tud_hid_n_ready(0) || tud_hid_n_ready(1) || tud_suspended()) {
             send_report(do_send_report);
         }
         if (monitor_enabled && tud_hid_n_ready(1)) {

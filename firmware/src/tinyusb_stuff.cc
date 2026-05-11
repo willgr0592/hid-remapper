@@ -35,7 +35,9 @@ tusb_desc_device_t desc_device = {
 };
 
 // Interface 0: Mouse
-// Report ID 1: 5 buttons (left/right/mid/back/fwd), X/Y rel int16, wheel int8, pan int8
+// Report ID 1: 5 buttons (left/right/mid/back/fwd), X/Y rel int16, wheel int8, pan int8.
+// Keep this payload layout in sync with uart_fake_descriptor in uart_cmd.cc
+// and the mouse section of our_report_descriptor_kb_mouse in our_descriptor.cc.
 // Total input report: 1 (ID) + 1 (buttons+pad) + 2 (X) + 2 (Y) + 1 (wheel) + 1 (pan) = 8 bytes
 static const uint8_t desc_ms_mouse[] = {
     0x05, 0x01,        // Usage Page (Generic Desktop)
@@ -259,8 +261,12 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 }
 
 void tud_hid_set_protocol_cb(uint8_t instance, uint8_t protocol) {
-    boot_protocol_keyboard = (protocol == HID_PROTOCOL_BOOT);
-    boot_protocol_updated = true;
+    // HID instance 0 is the mouse, instance 1 is the keyboard. Only the
+    // keyboard report parser has a boot-protocol alternate descriptor.
+    if (instance == 1) {
+        boot_protocol_keyboard = (protocol == HID_PROTOCOL_BOOT);
+        boot_protocol_updated = true;
+    }
 }
 
 void tud_mount_cb() {

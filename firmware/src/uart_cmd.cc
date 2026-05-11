@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
 
 #include <tusb.h>
@@ -22,12 +23,14 @@
 
 // HID report descriptor for the fake UART input device.
 // No Report ID. Matches kb_mouse descriptor usages so unmapped passthrough works.
-// Report layout (8 bytes):
-//   Bytes 0-1: Buttons 1-16 (16 x 1-bit, absolute)
-//   Bytes 2-3: X (int16_t, relative)
-//   Bytes 4-5: Y (int16_t, relative)
-//   Byte  6:   Wheel (int8_t, relative)
-//   Byte  7:   AC Pan (int8_t, relative)
+// Report layout (7 bytes, no report ID):
+//   Byte  0:   Buttons 1-5 (5 x 1-bit, absolute) + 3 bits padding
+//   Bytes 1-2: X (int16_t, relative)
+//   Bytes 3-4: Y (int16_t, relative)
+//   Byte  5:   Wheel (int8_t, relative)
+//   Byte  6:   AC Pan (int8_t, relative)
+// This intentionally matches the Report ID 1 payload exposed over USB in
+// tinyusb_stuff.cc and the internal kb_mouse descriptor in our_descriptor.cc.
 static const uint8_t uart_fake_descriptor[] = {
     0x05, 0x01,        // Usage Page (Generic Desktop)
     0x09, 0x02,        // Usage (Mouse)
@@ -35,15 +38,18 @@ static const uint8_t uart_fake_descriptor[] = {
     0x09, 0x01,        //   Usage (Pointer)
     0xA1, 0x00,        //   Collection (Physical)
 
-    // 16 buttons
+    // 5 buttons
     0x05, 0x09,        //     Usage Page (Button)
     0x19, 0x01,        //     Usage Minimum (1)
-    0x29, 0x10,        //     Usage Maximum (16)
+    0x29, 0x05,        //     Usage Maximum (5)
     0x15, 0x00,        //     Logical Minimum (0)
     0x25, 0x01,        //     Logical Maximum (1)
     0x75, 0x01,        //     Report Size (1)
-    0x95, 0x10,        //     Report Count (16)
+    0x95, 0x05,        //     Report Count (5)
     0x81, 0x02,        //     Input (Data,Var,Abs)
+    0x75, 0x03,        //     Report Size (3)
+    0x95, 0x01,        //     Report Count (1)
+    0x81, 0x03,        //     Input (Const,Var,Abs)
 
     // X, Y (16-bit signed relative)
     0x05, 0x01,        //     Usage Page (Generic Desktop)
@@ -57,7 +63,7 @@ static const uint8_t uart_fake_descriptor[] = {
 
     // Wheel (8-bit signed relative)
     0x09, 0x38,        //     Usage (Wheel)
-    0x15, 0x80,        //     Logical Minimum (-128)
+    0x15, 0x81,        //     Logical Minimum (-127)
     0x25, 0x7F,        //     Logical Maximum (127)
     0x75, 0x08,        //     Report Size (8)
     0x95, 0x01,        //     Report Count (1)
@@ -66,7 +72,7 @@ static const uint8_t uart_fake_descriptor[] = {
     // AC Pan (8-bit signed relative)
     0x05, 0x0C,        //     Usage Page (Consumer)
     0x0A, 0x38, 0x02,  //     Usage (AC Pan)
-    0x15, 0x80,        //     Logical Minimum (-128)
+    0x15, 0x81,        //     Logical Minimum (-127)
     0x25, 0x7F,        //     Logical Maximum (127)
     0x75, 0x08,        //     Report Size (8)
     0x95, 0x01,        //     Report Count (1)
@@ -76,9 +82,9 @@ static const uint8_t uart_fake_descriptor[] = {
     0xC0,              // End Collection
 };
 
-// Report structure matching uart_fake_descriptor (8 bytes, no report ID)
+// Report structure matching uart_fake_descriptor (7 bytes, no report ID)
 struct __attribute__((packed)) uart_mouse_report_t {
-    uint16_t buttons;
+    uint8_t buttons;
     int16_t dx;
     int16_t dy;
     int8_t wheel;
@@ -86,7 +92,14 @@ struct __attribute__((packed)) uart_mouse_report_t {
 };
 
 // Persistent button state (buttons are absolute, so we track state across commands)
-static uint16_t button_state = 0;
+static uint8_t button_state = 0;
+static constexpr uint8_t MOUSE_BUTTON_MASK = 0x1F;
+static constexpr uint8_t MOUSE_BUTTON_COUNT = 5;
+
+static int8_t clamp_scroll_axis(int8_t value) {
+    // The Microsoft-style descriptor advertises -127..127 for wheel/pan.
+    return value < -127 ? -127 : value;
+}
 
 // Persistent keyboard state - kept across commands so keys stay held
 // The boot keyboard report has six key slots, so transient taps can coexist
@@ -250,7 +263,7 @@ static uint8_t cmd_data_length(uint8_t c) {
         case UART_CMD_MOVE:    return 4;
         case UART_CMD_BUTTONS: return 2;
         case UART_CMD_SCROLL:  return 2;
-        case UART_CMD_REPORT:  return 8;
+        case UART_CMD_REPORT:  return 7;
         case UART_CMD_CLICK:   return 2;
         case UART_CMD_KEY:     return 2;
         case UART_CMD_KEY_TAP: return 2;
@@ -260,7 +273,12 @@ static uint8_t cmd_data_length(uint8_t c) {
 
 static void send_response(uint8_t resp_cmd, uint8_t status) {
     uint8_t resp[3] = { UART_CMD_RESP, resp_cmd, status };
-    uart_write_blocking(UART_CMD_INST, resp, sizeof(resp));
+    for (uint8_t i = 0; i < sizeof(resp); i++) {
+        if (!uart_is_writable(UART_CMD_INST)) {
+            return;
+        }
+        uart_putc_raw(UART_CMD_INST, resp[i]);
+    }
 }
 
 static void inject_report(int16_t dx, int16_t dy, int8_t wheel, int8_t pan) {
@@ -268,8 +286,8 @@ static void inject_report(int16_t dx, int16_t dy, int8_t wheel, int8_t pan) {
     report.buttons = button_state;
     report.dx = dx;
     report.dy = dy;
-    report.wheel = wheel;
-    report.pan = pan;
+    report.wheel = clamp_scroll_axis(wheel);
+    report.pan = clamp_scroll_axis(pan);
 
     handle_received_report((const uint8_t*) &report, sizeof(report), UART_FAKE_INTERFACE);
 }
@@ -283,7 +301,7 @@ static bool execute_cmd() {
             return true;
         }
         case UART_CMD_BUTTONS: {
-            button_state = data_buf[0] | (data_buf[1] << 8);
+            button_state = data_buf[0] & MOUSE_BUTTON_MASK;
             inject_report(0, 0, 0, 0);
             return true;
         }
@@ -294,18 +312,18 @@ static bool execute_cmd() {
             return true;
         }
         case UART_CMD_REPORT: {
-            button_state = data_buf[0] | (data_buf[1] << 8);
-            int16_t dx = (int16_t) (data_buf[2] | (data_buf[3] << 8));
-            int16_t dy = (int16_t) (data_buf[4] | (data_buf[5] << 8));
-            int8_t wheel = (int8_t) data_buf[6];
-            int8_t pan = (int8_t) data_buf[7];
+            button_state = data_buf[0] & MOUSE_BUTTON_MASK;
+            int16_t dx = (int16_t) (data_buf[1] | (data_buf[2] << 8));
+            int16_t dy = (int16_t) (data_buf[3] | (data_buf[4] << 8));
+            int8_t wheel = (int8_t) data_buf[5];
+            int8_t pan = (int8_t) data_buf[6];
             inject_report(dx, dy, wheel, pan);
             return true;
         }
         case UART_CMD_CLICK: {
             uint8_t btn = data_buf[0];
             uint8_t action = data_buf[1];
-            if (btn < 16) {
+            if (btn < MOUSE_BUTTON_COUNT) {
                 if (action) {
                     button_state |= (1 << btn);
                 } else {

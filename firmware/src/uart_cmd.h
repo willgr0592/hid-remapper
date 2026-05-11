@@ -13,10 +13,10 @@
 //
 // Commands:
 //   0x01 MOVE     - 4 data bytes: int16_t dx (LE), int16_t dy (LE)
-//   0x02 BUTTONS  - 2 data bytes: uint16_t button_mask (LE), bit0=btn1(left), bit1=btn2(right), ...
+//   0x02 BUTTONS  - 2 data bytes: uint16_t button_mask (LE), lower 5 bits used
 //   0x03 SCROLL   - 2 data bytes: int8_t wheel, int8_t pan
-//   0x04 REPORT   - 8 data bytes: uint16_t buttons (LE), int16_t dx (LE), int16_t dy (LE), int8_t wheel, int8_t pan
-//   0x05 CLICK    - 2 data bytes: uint8_t button_index (0-15), uint8_t action (0=release, 1=press)
+//   0x04 REPORT   - 7 data bytes: uint8_t buttons, int16_t dx (LE), int16_t dy (LE), int8_t wheel, int8_t pan
+//   0x05 CLICK    - 2 data bytes: uint8_t button_index (0-4), uint8_t action (0=release, 1=press)
 //   0x06 KEY      - 2 data bytes: uint8_t modifier_mask, uint8_t keycode (USB HID keycode, 0=release)
 //   0x07 KEY_TAP  - 2 data bytes: transient modifier/keycode tap queued alongside held KEY state
 //
